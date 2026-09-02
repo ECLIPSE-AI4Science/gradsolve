@@ -1,0 +1,33 @@
+cff-version: 1.2.0
+message: >-
+  If you use gradsolve in your research, please cite the article listed under
+  preferred-citation.
+title: gradsolve
+type: software
+version: 0.2.1
+authors:
+  - family-names: "Spurio Mancini"
+    given-names: Alessio
+abstract: >-
+  gradsolve is a JAX library of differentiable ensemble solvers for differential equations on
+  GPUs (ordinary differential equations today). It solves many trajectories at once and returns
+  an exact reverse-mode gradient through the solve via a record-and-replay adjoint.
+license: MIT
+repository-code: "https://github.com/ECLIPSE-AI4Science/gradsolve"
+url: "https://github.com/ECLIPSE-AI4Science/gradsolve"
+keywords:
+  - differential-equations
+  - ordinary-differential-equations
+  - automatic-differentiation
+  - jax
+  - gpu
+  - ensemble
+  - adjoint
+preferred-citation:
+  type: article
+  title: "gradsolve: fast exact gradients for ODE ensembles on GPUs"
+  authors:
+    - family-names: "Spurio Mancini"
+      given-names: Alessio
+  year: 2026
+  notes: "submitted"

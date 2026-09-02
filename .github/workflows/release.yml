@@ -1,0 +1,60 @@
+name: release
+
+# Runs only when a version tag is pushed: pushing e.g. `v0.2.1` builds the distribution
+# and publishes it to PyPI via Trusted Publishing (OIDC, no stored token).
+on:
+  push:
+    tags:
+      - "v*"
+
+# Default least privilege for every job; only `publish` is granted id-token.
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.12"
+      - name: Install build tooling (pinned via [release] extra)
+        run: python -m pip install -e '.[release]'
+      - name: Tag matches the package version; CITATION.cff schema
+        run: |
+          pkg=$(python -c 'import gradsolve; print(gradsolve.__version__)')
+          test "${GITHUB_REF_NAME#v}" = "$pkg" || { echo "tag $GITHUB_REF_NAME does not match gradsolve.__version__ $pkg"; exit 1; }
+          cffconvert --validate
+      - name: Build sdist + wheel
+        run: |
+          rm -rf dist
+          python -m build
+      - name: twine check
+        run: twine check dist/*
+      - name: Upload dist artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: dist
+          path: dist/
+          if-no-files-found: error
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    # Protected environment gates the OIDC exchange; configure required
+    # reviewers / the PyPI pending publisher against this environment name.
+    environment: pypi
+    # ONLY this job can mint an OIDC token for Trusted Publishing.
+    permissions:
+      id-token: write
+    steps:
+      - name: Download the built dist
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: dist
+          path: dist/
+      - name: Publish to PyPI (Trusted Publishing)
+        uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b # v1.14.0
+        with:
+          packages-dir: dist/

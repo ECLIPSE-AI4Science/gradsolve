@@ -1,0 +1,119 @@
+name: ci
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+  workflow_dispatch:
+
+# Least privilege: no job needs write access to the repo.
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Force the CPU backend everywhere; CI runners have no GPU.
+  JAX_PLATFORMS: cpu
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.12"
+      - name: Install (test extra brings ruff)
+        run: python -m pip install -e '.[test]'
+      - name: Ruff
+        run: ruff check gradsolve tests
+
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        python-version: ["3.11", "3.12", "3.13"]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install
+        run: python -m pip install -e '.[test,diffrax]'
+      - name: Test
+        run: pytest -q
+
+  min-deps:
+    # Assert the declared dependency floors actually resolve and pass, on the
+    # lowest supported Python. Includes the CPU jax.ffi smoke test (the FFI
+    # bridge compiles a host-C++ target, no nvcc required).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.11"
+      - name: Install exact declared floors + package
+        run: python -m pip install -e '.[test]' "jax==0.5.0" "numpy==1.25.*"
+      - name: Show resolved versions
+        run: python -c "import jax, numpy; print('jax', jax.__version__, 'numpy', numpy.__version__)"
+      - name: Test (includes CPU jax.ffi smoke)
+        run: pytest -q
+
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.12"
+      - name: Install build tooling (pinned via [release] extra)
+        run: python -m pip install -e '.[release]'
+      - name: Build sdist + wheel
+        run: |
+          rm -rf dist
+          python -m build
+      - name: twine check
+        run: twine check dist/*
+      - name: CITATION.cff schema
+        run: cffconvert --validate
+      - name: Install wheel into a clean venv and verify
+        run: |
+          python -m venv /tmp/wheel-venv
+          /tmp/wheel-venv/bin/python -m pip install --upgrade pip
+          /tmp/wheel-venv/bin/python -m pip install dist/*.whl
+          /tmp/wheel-venv/bin/python -m pip check
+          /tmp/wheel-venv/bin/python -c "import gradsolve; print('gradsolve', gradsolve.__version__)"
+          /tmp/wheel-venv/bin/python examples/00_standalone.py
+
+  examples:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.12"
+      - name: Install with all extras
+        run: python -m pip install -e '.[all,test,reproduce]'
+      - name: Run the example tutorials on CPU
+        run: |
+          set -e
+          for f in examples/0*.py; do
+            echo "::group::$f"
+            python "$f"
+            echo "::endgroup::"
+          done
+      - name: Execute the getting-started notebook
+        run: |
+          jupyter nbconvert --to notebook --execute \
+            --output /tmp/getting_started.out.ipynb \
+            examples/notebooks/getting_started.ipynb
+      - name: Benchmark smoke (gradsolve against diffrax, tiny CPU configuration)
+        run: |
+          python benchmarks/reverse_mode_vs_diffrax.py --n 16 --rtols 1e-3 1e-5 --repeats 1 --out-dir /tmp/bench
+          python benchmarks/forward_vs_diffeqgpu.py --n 64 --rtols 1e-4 1e-6 --repeats 1 --julia none --out-dir /tmp/bench

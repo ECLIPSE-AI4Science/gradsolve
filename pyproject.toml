@@ -1,0 +1,74 @@
+[project]
+name = "gradsolve"
+description = "Differentiable ensemble solvers for differential equations on GPUs, in JAX (record-and-replay adjoint)."
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Alessio Spurio Mancini" }]
+dependencies = ["numpy>=1.25", "jax>=0.5.0"]
+dynamic = ["version"]
+keywords = ["differential-equations", "ode", "jax", "gpu", "differentiable", "ensemble", "adjoint", "tsit5"]
+classifiers = [
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Intended Audience :: Science/Research",
+    "Development Status :: 4 - Beta",
+    "Topic :: Scientific/Engineering",
+]
+
+[project.optional-dependencies]
+# The fused NVIDIA-Warp adaptive Tsit5 / Rosenbrock kernels (GPU engines).
+warp = ["warp-lang>=1.14"]
+# The universal adaptive fallback engine (Kvaerno5 / Tsit5 via diffrax).
+diffrax = ["diffrax>=0.5"]
+# GPU install: JAX with CUDA 12 wheels + the Warp kernels.
+cuda12 = ["jax[cuda12]", "warp-lang>=1.14"]
+# Contributor test toolchain.
+test = ["pytest", "scipy", "ruff==0.16.5"]  # pinned: lint results must not move with ruff releases
+# The tutorial scripts, the getting-started notebook, the figure script and the benchmark notebook.
+reproduce = ["matplotlib", "jupyter", "nbconvert", "pandas", "scipy"]
+# The documentation site (docs/conf.py): sphinx-build -W -b html docs docs/_build/html
+docs = ["sphinx", "furo", "myst-parser"]
+# Everything a user might want at once.
+all = ["warp-lang>=1.14", "diffrax>=0.5"]
+# Maintainer release toolchain (build, publish, validate). Pinned so the local
+# gates and CI use identical tool versions.
+release = ["build==1.5.0", "twine==6.2.0", "cffconvert==2.0.0", "detect-secrets==1.5.0"]
+
+[project.urls]
+Homepage = "https://github.com/ECLIPSE-AI4Science/gradsolve"
+Repository = "https://github.com/ECLIPSE-AI4Science/gradsolve"
+Changelog = "https://github.com/ECLIPSE-AI4Science/gradsolve/blob/main/CHANGELOG.md"
+
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+# gradsolve is the ONLY published package. The examples/ tutorials + tests/ live in the
+# repo tree but are not part of the wheel.
+[tool.setuptools.packages.find]
+include = ["gradsolve*"]
+exclude = ["examples*", "tests*", "scripts*", "paper*", "docs*"]
+
+[tool.setuptools.dynamic]
+version = { attr = "gradsolve.__version__" }
+
+[tool.setuptools.package-data]
+gradsolve = ["py.typed", "cuda/kernels/*.cu.in"]
+
+[tool.pytest.ini_options]
+# Default run = the gradsolve library suite.
+testpaths = ["tests"]
+norecursedirs = ["build", "dist", ".git", ".venv", ".pytest_cache", "__pycache__"]
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "gpu: requires a CUDA GPU (deselect on CPU with '-m \"not gpu\"')",
+]
+addopts = "-m 'not gpu'"
+
+[tool.ruff.lint]
+# ruff's pre-0.16 defaults plus import sorting (I), pinned so the rule set does not change
+# with a ruff upgrade.
+select = ["E4", "E7", "E9", "F", "I"]

@@ -1,0 +1,21 @@
+# Exact include rules: the sdist carries the library, its tests, the docs and the tutorials.
+
+# Test suite (shipped in the sdist so downstream can run it).
+recursive-include tests *.py
+
+# Documentation pages.
+include docs/index.md docs/quickstart.md docs/guide.md docs/api.md
+
+# Tutorial examples + getting-started notebook + committed figure asset.
+include examples/0*.py examples/__init__.py examples/README.md
+include examples/notebooks/getting_started.ipynb
+recursive-include examples/assets *.png
+
+# Standard project files.
+include CITATION.cff CONTRIBUTING.md CHANGELOG.md README.md LICENSE
+
+# The figure data and notebooks live in the repository, not in the package.
+prune benchmarks
+
+# Caches / compiled artifacts never ship.
+global-exclude *.pyc __pycache__

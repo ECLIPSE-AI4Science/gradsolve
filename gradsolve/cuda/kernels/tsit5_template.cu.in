@@ -1,0 +1,197 @@
+// gradsolve cuda_tsit5 — generic adaptive Tsit5 forward-only kernel (codegen template).
+//
+// gradsolve/cuda/_codegen.py fills (str.replace, not format) the scalar type, the dimension
+// literal, the Tsit5 tableau #defines (from gradsolve.solvers.tsit5_step, shared with the
+// JAX solvers), and the per-field RHS body (gradsolve/cuda/_fields.py). NB: the fill
+// tokens deliberately appear nowhere in this comment (multi-line content must not be spliced
+// into a // block).
+//
+// Host/device dual: under __CUDACC__ it builds the CUDA kernel + a transposed-SoA launcher;
+// otherwise a host main (reads a batch on stdin, integrates, prints final states +
+// step counts) so the entire kernel logic is testable on the CPU (only PTX
+// register residency needs the GPU). The kernel integrates one trajectory per thread with
+// the Tsit5 tableau of Tsitouras (2011).
+#include <math.h>
+#ifdef __CUDACC__
+  #define HD __host__ __device__
+  #define REST __restrict__
+#else
+  #include <cstdio>
+  #include <cstdlib>
+  #define HD
+  #define REST
+#endif
+
+typedef @SCALAR@ real;
+
+// --- Tsit5 tableau (single source: gradsolve.solvers.tsit5_step) ---
+@TABLEAU@
+// controller (Hairer-Norsett-Wanner II.4 I-controller) — matches the numpy reference oracle
+#define SAFETY    ((real)0.9)
+#define ERR_FLOOR ((real)1e-10)
+#define FAC_MIN   ((real)0.2)
+#define FAC_MAX   ((real)5.0)
+#define ORDER_EXP ((real)-0.2)
+#define DIM @D@
+
+// --- per-field RHS (autonomous: t unused; rho is the per-trajectory scalar param) ---
+@FIELD@
+
+// One trajectory, register/stack-resident state (DIM a compile-time literal so ptxas keeps
+// the state arrays in registers under #pragma unroll). Exact-f64 controller is the default;
+// -DCHEAP_CTRL swaps the per-step f64 pow for an f32 approx (opt-in, NOT oracle-bit-parity).
+HD inline void tsit5_fwd_one(const real* REST y0, real rho, real t1, real rtol, real atol,
+                             int max_steps, real* REST yf, int* REST nsteps) {
+  real y[DIM], k1[DIM], k2[DIM], k3[DIM], k4[DIM], k5[DIM], k6[DIM], k7[DIM], s[DIM], y5[DIM];
+  #pragma unroll
+  for (int i = 0; i < DIM; ++i) y[i] = y0[i];
+  real t = (real)0, dt = t1 / (real)100;
+  field((real)0, y, rho, k1);                       // FSAL seed: k1 = f(y)
+  int steps = 0;
+  for (int it = 0; it < max_steps; ++it) {
+    if (t >= t1) break;
+    real h = dt; if (t + h > t1) h = t1 - t;
+    #pragma unroll
+    for (int i = 0; i < DIM; ++i) s[i] = y[i] + h * (A21 * k1[i]);
+    field(t + C2 * h, s, rho, k2);
+    #pragma unroll
+    for (int i = 0; i < DIM; ++i) s[i] = y[i] + h * (A31 * k1[i] + A32 * k2[i]);
+    field(t + C3 * h, s, rho, k3);
+    #pragma unroll
+    for (int i = 0; i < DIM; ++i) s[i] = y[i] + h * (A41 * k1[i] + A42 * k2[i] + A43 * k3[i]);
+    field(t + C4 * h, s, rho, k4);
+    #pragma unroll
+    for (int i = 0; i < DIM; ++i)
+      s[i] = y[i] + h * (A51 * k1[i] + A52 * k2[i] + A53 * k3[i] + A54 * k4[i]);
+    field(t + C5 * h, s, rho, k5);
+    #pragma unroll
+    for (int i = 0; i < DIM; ++i)
+      s[i] = y[i] + h * (A61 * k1[i] + A62 * k2[i] + A63 * k3[i] + A64 * k4[i] + A65 * k5[i]);
+    field(t + C6 * h, s, rho, k6);
+    #pragma unroll
+    for (int i = 0; i < DIM; ++i)
+      y5[i] = y[i] + h * (B1 * k1[i] + B2 * k2[i] + B3 * k3[i] + B4 * k4[i] + B5 * k5[i] + B6 * k6[i]);
+    field(t + h, y5, rho, k7);                      // FSAL stage (also next-step k1 on accept)
+    real err2 = (real)0;
+    #pragma unroll
+    for (int i = 0; i < DIM; ++i) {
+      real ei = h * (E1 * k1[i] + E2 * k2[i] + E3 * k3[i] + E4 * k4[i] + E5 * k5[i] + E6 * k6[i] + E7 * k7[i]);
+      real sc = atol + rtol * fmax(fabs(y[i]), fabs(y5[i]));
+      real e0 = ei / sc; err2 += e0 * e0;
+    }
+    real err = sqrt(err2 / (real)DIM);              // WRMS over DIM
+    if (err <= (real)1) {
+      t += h;
+      #pragma unroll
+      for (int i = 0; i < DIM; ++i) { y[i] = y5[i]; k1[i] = k7[i]; }  // FSAL reuse on accept
+      ++steps;
+    }
+    real ef = fmax(err, ERR_FLOOR);
+#ifdef CHEAP_CTRL
+    real fac = SAFETY * (real)powf((float)ef, (float)ORDER_EXP);   // opt-in f32 controller
+#else
+    real fac = SAFETY * pow(ef, ORDER_EXP);                        // exact f64 controller (default)
+#endif
+    fac = fmin(fmax(fac, FAC_MIN), FAC_MAX);
+    dt = h * fac;
+  }
+  #pragma unroll
+  for (int i = 0; i < DIM; ++i) yf[i] = y[i];
+  if (nsteps) *nsteps = steps;
+}
+
+#ifdef __CUDACC__
+// Device kernel: one thread per trajectory, transposed-SoA I/O (called by the CUDA FFI
+// handler below).
+extern "C" __global__ void tsit5_kernel(const real* __restrict__ y0, const real* __restrict__ rho,
+                                        real* __restrict__ yf, int* __restrict__ ns,
+                                        int n, real t1, real rtol, real atol, int max_steps) {
+  int tid = blockIdx.x * blockDim.x + threadIdx.x;
+  if (tid >= n) return;
+  real yloc[DIM], yfl[DIM]; int st;
+  #pragma unroll
+  for (int i = 0; i < DIM; ++i) yloc[i] = y0[i * n + tid];          // transposed-SoA load
+  tsit5_fwd_one(yloc, rho[tid], t1, rtol, atol, max_steps, yfl, &st);
+  #pragma unroll
+  for (int i = 0; i < DIM; ++i) yf[i * n + tid] = yfl[i];           // transposed-SoA store
+  if (ns) ns[tid] = st;
+}
+#endif
+
+// ---- XLA typed-FFI handler `Tsit5Fwd` (jax.ffi). Same handler symbol on CPU and CUDA so the
+// Python bridge registers one name per platform. Built with -DGRADSOLVE_FFI -I$(jax.ffi.
+// include_dir()): CPU (host compiler, validation) loops on the host; CUDA (nvcc)
+// launches tsit5_kernel on the stream. I/O: y0[DIM,n] + rho[n] (transposed-SoA) -> yf[DIM,n] +
+// nsteps[n] (s32); attrs t1/rtol/atol (f64) + max_steps (s64). The op is forward-only by
+// construction (no autodiff rule). ----
+#ifdef GRADSOLVE_FFI
+#include "xla/ffi/api/ffi.h"
+namespace ffi = xla::ffi;
+
+#ifdef __CUDACC__
+ffi::Error Tsit5FwdImpl(cudaStream_t stream,
+                        ffi::Buffer<@FFI_DTYPE@> y0, ffi::Buffer<@FFI_DTYPE@> rho,
+                        ffi::ResultBuffer<@FFI_DTYPE@> yf, ffi::ResultBuffer<ffi::S32> ns,
+                        double t1, double rtol, double atol, int64_t max_steps) {
+  auto dims = y0.dimensions();
+  long long n = (long long)dims.back();
+  int block = 128, grid = (int)((n + block - 1) / block);
+  tsit5_kernel<<<grid, block, 0, stream>>>(
+      y0.typed_data(), rho.typed_data(), yf->typed_data(), ns->typed_data(),
+      (int)n, (real)t1, (real)rtol, (real)atol, (int)max_steps);
+  cudaError_t e = cudaGetLastError();
+  if (e != cudaSuccess) return ffi::Error::Internal(std::string("CUDA: ") + cudaGetErrorString(e));
+  return ffi::Error::Success();
+}
+XLA_FFI_DEFINE_HANDLER_SYMBOL(
+    Tsit5Fwd, Tsit5FwdImpl,
+    ffi::Ffi::Bind().Ctx<ffi::PlatformStream<cudaStream_t>>()
+        .Arg<ffi::Buffer<@FFI_DTYPE@>>().Arg<ffi::Buffer<@FFI_DTYPE@>>()
+        .Ret<ffi::Buffer<@FFI_DTYPE@>>().Ret<ffi::Buffer<ffi::S32>>()
+        .Attr<double>("t1").Attr<double>("rtol").Attr<double>("atol").Attr<int64_t>("max_steps"));
+#else   // CPU FFI handler (host loop) — the CPU validation target
+ffi::Error Tsit5FwdImpl(ffi::Buffer<@FFI_DTYPE@> y0, ffi::Buffer<@FFI_DTYPE@> rho,
+                        ffi::ResultBuffer<@FFI_DTYPE@> yf, ffi::ResultBuffer<ffi::S32> ns,
+                        double t1, double rtol, double atol, int64_t max_steps) {
+  auto dims = y0.dimensions();
+  long long n = (long long)dims.back();
+  const real* y0p = y0.typed_data();
+  const real* rhop = rho.typed_data();
+  real* yfp = yf->typed_data();
+  int* nsp = ns->typed_data();
+  for (long long i = 0; i < n; ++i) {
+    real yl[DIM], yfl[DIM]; int st;
+    for (int d = 0; d < DIM; ++d) yl[d] = y0p[(long long)d * n + i];
+    tsit5_fwd_one(yl, rhop[i], (real)t1, (real)rtol, (real)atol, (int)max_steps, yfl, &st);
+    for (int d = 0; d < DIM; ++d) yfp[(long long)d * n + i] = yfl[d];
+    nsp[i] = st;
+  }
+  return ffi::Error::Success();
+}
+XLA_FFI_DEFINE_HANDLER_SYMBOL(
+    Tsit5Fwd, Tsit5FwdImpl,
+    ffi::Ffi::Bind()
+        .Arg<ffi::Buffer<@FFI_DTYPE@>>().Arg<ffi::Buffer<@FFI_DTYPE@>>()
+        .Ret<ffi::Buffer<@FFI_DTYPE@>>().Ret<ffi::Buffer<ffi::S32>>()
+        .Attr<double>("t1").Attr<double>("rtol").Attr<double>("atol").Attr<int64_t>("max_steps"));
+#endif  // __CUDACC__
+#endif  // GRADSOLVE_FFI
+
+#ifdef GRADSOLVE_HOST_MAIN
+// Standalone host program (CPU check): stdin "D n t1 rtol atol" then n*(D y0 + rho);
+// stdout n lines "yf[0..D-1] steps". No FFI/CUDA deps -> compiles with bare clang.
+int main() {
+  int D, n; double t1, rtol, atol;
+  if (scanf("%d %d %lf %lf %lf", &D, &n, &t1, &rtol, &atol) != 5) return 1;
+  if (D != DIM) { fprintf(stderr, "D mismatch %d != %d\n", D, DIM); return 2; }
+  for (int j = 0; j < n; ++j) {
+    real y0[DIM], rho, yf[DIM]; int st;
+    for (int i = 0; i < DIM; ++i) { double v; if (scanf("%lf", &v) != 1) return 3; y0[i] = (real)v; }
+    { double v; if (scanf("%lf", &v) != 1) return 3; rho = (real)v; }
+    tsit5_fwd_one(y0, rho, (real)t1, (real)rtol, (real)atol, 100000, yf, &st);
+    for (int i = 0; i < DIM; ++i) printf("%.17e ", (double)yf[i]);
+    printf("%d\n", st);
+  }
+  return 0;
+}
+#endif

@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 1000" width="1000" height="1000" role="img" aria-label="gradsolve">
+<title>gradsolve</title>
+<defs><linearGradient id="fav" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#7ad151"/><stop offset="0.5" stop-color="#21918c"/><stop offset="1" stop-color="#3b528b"/></linearGradient></defs>
+<path d="M98.16 204.00Q66.99 150.00 129.34 150.00L870.66 150.00Q933.01 150.00 901.84 204.00L531.18 846.00Q500.00 900.00 468.82 846.00Z" fill="none" stroke="url(#fav)" stroke-width="100" stroke-linejoin="round"/>
+</svg>

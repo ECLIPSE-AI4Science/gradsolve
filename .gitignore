@@ -1,0 +1,22 @@
+# .gitignore for the public gradsolve tree (injected by stage_public_tree.sh as .gitignore).
+#
+# Minimal, competitor-name-free by construction. The private root .gitignore names
+# clean-room competitor clones and local scratch dirs; this one lists only the
+# standard Python build/cache artifacts a public package needs.
+
+# Byte-compiled / caches
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+
+# Build / distribution
+build/
+dist/
+*.egg-info/
+
+# Virtual environments
+.venv/
+
+# Benchmark results
+benchmarks/results/
