@@ -1,7 +1,7 @@
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/logo/gradsolve-lockup-dark.svg">
-    <img alt="gradsolve" src="docs/assets/logo/gradsolve-lockup-light.svg" width="460">
+    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/ECLIPSE-AI4Science/gradsolve/main/docs/assets/logo/gradsolve-lockup-dark.svg">
+    <img alt="gradsolve" src="https://raw.githubusercontent.com/ECLIPSE-AI4Science/gradsolve/main/docs/assets/logo/gradsolve-lockup-light.svg" width="460">
   </picture>
 </p>
 
@@ -126,7 +126,7 @@ flag, and whether a gradient is needed (`gradsolve.dispatch.choose_engine`). Rea
 | Anything else: an unregistered `f_jax`, `dim > 64`, or a registered field without the `warp` extra | diffrax when installed, otherwise the record-and-replay engine | record-and-replay through your own `f_jax` (`tsit5_replay` nonstiff, `rodas5p_replay` stiff) |
 | An explicit `engine=` | any engine in the registry, including the fixed-step scans | as listed in [`docs/api.md`](docs/api.md) |
 
-![Routing map by state dimension, stiffness and gradient need](docs/assets/figures/fig_routing.png)
+![Routing map by state dimension, stiffness and gradient need](https://raw.githubusercontent.com/ECLIPSE-AI4Science/gradsolve/main/docs/assets/figures/fig_routing.png)
 
 The map is drawn from the routing table in the source (`gradsolve.dispatch.DECISION_MAP`).
 
@@ -143,17 +143,17 @@ adding an H100 and an RTX 4090. To re-measure on your own hardware, the notebook
 [`benchmarks/`](benchmarks/README.md) time the reverse-mode comparison against diffrax and the
 forward-only comparison against DiffEqGPU.jl.
 
-![Reverse-mode gradient cost against ensemble size](docs/assets/figures/fig_reverse.png)
+![Reverse-mode gradient cost against ensemble size](https://raw.githubusercontent.com/ECLIPSE-AI4Science/gradsolve/main/docs/assets/figures/fig_reverse.png)
 
 Wall time of one reverse-mode gradient against ensemble size on an A100, for gradsolve, diffrax,
 torchode and torchdiffeq (left), and gradsolve on a CPU against the A100 (right).
 
-![Speedup over diffrax across GPUs and problems](docs/assets/figures/fig_crossarch.png)
+![Speedup over diffrax across GPUs and problems](https://raw.githubusercontent.com/ECLIPSE-AI4Science/gradsolve/main/docs/assets/figures/fig_crossarch.png)
 
 Speedup over diffrax for the reverse-mode gradient on three GPUs (left) and across problem families
 on the A100 (right).
 
-![Time to fit parameters against the number of concurrent fits](docs/assets/figures/fig_fitting.png)
+![Time to fit parameters against the number of concurrent fits](https://raw.githubusercontent.com/ECLIPSE-AI4Science/gradsolve/main/docs/assets/figures/fig_fitting.png)
 
 Time spent in the optimiser loop to fit parameters, against the number of fits run concurrently, on
 the A100.

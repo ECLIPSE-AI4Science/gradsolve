@@ -41,6 +41,8 @@ release = ["build==1.5.0", "twine==6.2.0", "cffconvert==2.0.0", "detect-secrets=
 Homepage = "https://github.com/ECLIPSE-AI4Science/gradsolve"
 Repository = "https://github.com/ECLIPSE-AI4Science/gradsolve"
 Changelog = "https://github.com/ECLIPSE-AI4Science/gradsolve/blob/main/CHANGELOG.md"
+Documentation = "https://eclipse-ai4science.github.io/gradsolve/"
+Paper = "https://arxiv.org/abs/2609.02876"
 
 [build-system]
 requires = ["setuptools>=77"]
