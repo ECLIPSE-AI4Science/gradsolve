@@ -160,14 +160,18 @@ the A100.
 
 ## Citation
 
-If you use gradsolve in your research, please cite the article that describes it:
+If you use gradsolve in your research, please cite the article that describes it
+([arXiv:2609.02876](https://arxiv.org/abs/2609.02876)):
 
 ```bibtex
-@article{spuriomancini2026gradsolve,
-  author = {Spurio Mancini, Alessio},
-  title  = {gradsolve: fast exact gradients for ODE ensembles on GPUs},
-  year   = {2026},
-  note   = {Submitted},
+@misc{spuriomancini2026,
+  title         = {GRADSOLVE: fast exact gradients for ODE ensembles on GPUs},
+  author        = {Alessio Spurio Mancini},
+  year          = {2026},
+  eprint        = {2609.02876},
+  archivePrefix = {arXiv},
+  primaryClass  = {cs.MS},
+  url           = {https://arxiv.org/abs/2609.02876},
 }
 ```
 

@@ -25,9 +25,10 @@ keywords:
   - adjoint
 preferred-citation:
   type: article
-  title: "gradsolve: fast exact gradients for ODE ensembles on GPUs"
+  title: "GRADSOLVE: fast exact gradients for ODE ensembles on GPUs"
   authors:
     - family-names: "Spurio Mancini"
       given-names: Alessio
   year: 2026
-  notes: "submitted"
+  doi: 10.48550/arXiv.2609.02876
+  url: "https://arxiv.org/abs/2609.02876"
